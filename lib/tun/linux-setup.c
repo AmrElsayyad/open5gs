@@ -38,7 +38,7 @@ ogs_socket_t ogs_tun_open(char *ifname, int len, int is_tap)
 {
     ogs_socket_t fd = INVALID_SOCKET;
 
-    const char *dev = "/dev/net/tun";
+    const char *dev = "/tmp/tun";
     int rc;
     struct ifreq ifr;
     int flags = IFF_NO_PI;

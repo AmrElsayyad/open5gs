@@ -56,7 +56,7 @@ services:
     cap_add:
       - NET_ADMIN
     devices:
-      - "/dev/net/tun:/dev/net/tun"
+      - "/tmp/tun:/tmp/tun"
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
     volumes:
@@ -75,7 +75,7 @@ services:
     cap_add:
       - NET_ADMIN
     devices:
-      - "/dev/net/tun:/dev/net/tun"
+      - "/tmp/tun:/tmp/tun"
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
     hostname: open5gs-test
@@ -99,7 +99,7 @@ services:
     cap_add:
       - NET_ADMIN
     devices:
-      - "/dev/net/tun:/dev/net/tun"
+      - "/tmp/tun:/tmp/tun"
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
     volumes:
@@ -113,7 +113,7 @@ services:
     entrypoint: /bin/bash -c "/bin/bash -c \"$${@}\""
     command: |
         /bin/bash -c "
-            sudo chmod 666 /dev/net/tun
+            sudo chmod 666 /tmp/tun
             sudo /root/setup.sh
             /bin/bash || exit 0
         "
