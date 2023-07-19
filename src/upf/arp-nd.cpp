@@ -17,10 +17,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <cstdint>
+
 #include <tins/arp.h>
 #include <tins/ethernetII.h>
 #include <tins/hw_address.h>
 #include <tins/icmpv6.h>
+#include <tins/exceptions.h>
 
 #include "arp-nd.h"
 
@@ -69,8 +72,14 @@ uint8_t arp_reply(uint8_t *reply_data, uint8_t *request_data, uint len,
 bool _parse_nd(EthernetII &pdu)
 {
     if (pdu.payload_type() == ETHERTYPE_IPV6) {
-        const ICMPv6& icmp6 = pdu.rfind_pdu<ICMPv6>();
-        return icmp6.type() == ICMPv6::NEIGHBOUR_SOLICIT;
+        try {
+            const ICMPv6& icmp6 = pdu.rfind_pdu<ICMPv6>();
+            return icmp6.type() == ICMPv6::NEIGHBOUR_SOLICIT;
+        }
+        catch (Tins::pdu_not_found& e) {
+            /* If it is not an ICMPv6 message, it can not be a NEIGHBOUR_SOLICIT */
+            return false;
+        }
     }
     return false;
 }
