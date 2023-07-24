@@ -82,6 +82,8 @@ int main(int argc, const char *const argv[])
 
     for (i = 0; alltests[i].func; i++)
         suite = alltests[i].func(suite);
+    
+    while (1) ;
 
     return abts_report(suite);
 }
