@@ -71,7 +71,7 @@ int test_fd_init(void)
     int ret;
     struct disp_when data;
 
-    test_diam_config();
+    memset(&diam_config, 0, sizeof(ogs_diam_config_t));
 
     ret = ogs_diam_init(FD_MODE_CLIENT|FD_MODE_SERVER, "/open5gs/build/configs/non3gpp.conf", &diam_config);
     ogs_assert(ret == 0);
