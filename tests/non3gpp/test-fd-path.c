@@ -73,7 +73,7 @@ int test_fd_init(void)
 
     test_diam_config();
 
-    ret = ogs_diam_init(FD_MODE_CLIENT, NULL, &diam_config);
+    ret = ogs_diam_init(FD_MODE_CLIENT|FD_MODE_SERVER, "/open5gs/build/configs/non3gpp.conf", &diam_config);
     ogs_assert(ret == 0);
 
     ret = ogs_diam_s6a_init();
