@@ -6,3 +6,4 @@ subprojects/usrsctp
 
 webui/.next
 build/
+.cache/
