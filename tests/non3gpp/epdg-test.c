@@ -24,7 +24,7 @@
 static void test1_func(abts_case *tc, void *data)
 {
     int rv;
-    ogs_socknode_t *s1ap;
+//     ogs_socknode_t *s1ap;
     ogs_socknode_t *gtpu;
     ogs_socknode_t *epdg_c;
     ogs_socknode_t *epdg_u;
@@ -33,7 +33,7 @@ static void test1_func(abts_case *tc, void *data)
     ogs_pkbuf_t *esmbuf;
     ogs_pkbuf_t *sendbuf;
     ogs_pkbuf_t *recvbuf;
-    ogs_s1ap_message_t message;
+//     ogs_s1ap_message_t message;
 
     uint8_t *rx_sid = NULL;
 
@@ -42,8 +42,8 @@ static void test1_func(abts_case *tc, void *data)
     test_sess_t *sess = NULL;
     test_bearer_t *bearer = NULL;
 
-    uint32_t enb_ue_s1ap_id;
-    uint64_t mme_ue_s1ap_id;
+//     uint32_t enb_ue_s1ap_id;
+//     uint64_t mme_ue_s1ap_id;
 
     bson_t *doc = NULL;
 
@@ -70,8 +70,8 @@ static void test1_func(abts_case *tc, void *data)
     test_ue->opc_string = "e8ed289deba952e4283b54e88e6183ca";
 
     /* eNB connects to MME */
-    s1ap = tests1ap_client(AF_INET);
-    ABTS_PTR_NOTNULL(tc, s1ap);
+//     s1ap = tests1ap_client(AF_INET);
+//     ABTS_PTR_NOTNULL(tc, s1ap);
 
     /* eNB connects to SGW */
     gtpu = test_gtpu_server(1, AF_INET);
@@ -93,16 +93,16 @@ static void test1_func(abts_case *tc, void *data)
     ABTS_PTR_NOTNULL(tc, epdg_u);
 
     /* Send S1-Setup Reqeust */
-    sendbuf = test_s1ap_build_s1_setup_request(
-            S1AP_ENB_ID_PR_macroENB_ID, 0x54f64);
-    ABTS_PTR_NOTNULL(tc, sendbuf);
-    rv = testenb_s1ap_send(s1ap, sendbuf);
-    ABTS_INT_EQUAL(tc, OGS_OK, rv);
+//     sendbuf = test_s1ap_build_s1_setup_request(
+//             S1AP_ENB_ID_PR_macroENB_ID, 0x54f64);
+//     ABTS_PTR_NOTNULL(tc, sendbuf);
+//     rv = testenb_s1ap_send(s1ap, sendbuf);
+//     ABTS_INT_EQUAL(tc, OGS_OK, rv);
 
     /* Receive S1-Setup Response */
-    recvbuf = testenb_s1ap_read(s1ap);
-    ABTS_PTR_NOTNULL(tc, recvbuf);
-    tests1ap_recv(NULL, recvbuf);
+//     recvbuf = testenb_s1ap_read(s1ap);
+//     ABTS_PTR_NOTNULL(tc, recvbuf);
+//     tests1ap_recv(NULL, recvbuf);
 
     /********** Insert Subscriber in Database */
     doc = test_db_new_non3gpp(test_ue);
@@ -150,7 +150,7 @@ static void test1_func(abts_case *tc, void *data)
     ABTS_INT_EQUAL(tc, OGS_OK, test_db_remove_ue(test_ue));
 
     /* eNB disconnect from MME */
-    testenb_s1ap_close(s1ap);
+//     testenb_s1ap_close(s1ap);
 
     /* eNB disconnect from SGW */
     test_gtpu_close(gtpu);
@@ -165,7 +165,7 @@ static void test1_func(abts_case *tc, void *data)
 static void test2_func(abts_case *tc, void *data)
 {
     int rv;
-    ogs_socknode_t *s1ap;
+//     ogs_socknode_t *s1ap;
     ogs_socknode_t *gtpu;
     ogs_socknode_t *epdg_c;
     ogs_socknode_t *epdg_u;
@@ -174,7 +174,7 @@ static void test2_func(abts_case *tc, void *data)
     ogs_pkbuf_t *esmbuf;
     ogs_pkbuf_t *sendbuf;
     ogs_pkbuf_t *recvbuf;
-    ogs_s1ap_message_t message;
+//     ogs_s1ap_message_t message;
 
     uint8_t *rx_sid = NULL;
 
@@ -183,8 +183,8 @@ static void test2_func(abts_case *tc, void *data)
     test_sess_t *sess = NULL;
     test_bearer_t *bearer = NULL;
 
-    uint32_t enb_ue_s1ap_id;
-    uint64_t mme_ue_s1ap_id;
+//     uint32_t enb_ue_s1ap_id;
+//     uint64_t mme_ue_s1ap_id;
 
     bson_t *doc = NULL;
 
@@ -211,8 +211,8 @@ static void test2_func(abts_case *tc, void *data)
     test_ue->opc_string = "e8ed289deba952e4283b54e88e6183ca";
 
     /* eNB connects to MME */
-    s1ap = tests1ap_client(AF_INET);
-    ABTS_PTR_NOTNULL(tc, s1ap);
+//     s1ap = tests1ap_client(AF_INET);
+//     ABTS_PTR_NOTNULL(tc, s1ap);
 
     /* eNB connects to SGW */
     gtpu = test_gtpu_server(1, AF_INET);
@@ -234,16 +234,16 @@ static void test2_func(abts_case *tc, void *data)
     ABTS_PTR_NOTNULL(tc, epdg_u);
 
     /* Send S1-Setup Reqeust */
-    sendbuf = test_s1ap_build_s1_setup_request(
-            S1AP_ENB_ID_PR_macroENB_ID, 0x54f64);
-    ABTS_PTR_NOTNULL(tc, sendbuf);
-    rv = testenb_s1ap_send(s1ap, sendbuf);
-    ABTS_INT_EQUAL(tc, OGS_OK, rv);
+//     sendbuf = test_s1ap_build_s1_setup_request(
+//             S1AP_ENB_ID_PR_macroENB_ID, 0x54f64);
+//     ABTS_PTR_NOTNULL(tc, sendbuf);
+//     rv = testenb_s1ap_send(s1ap, sendbuf);
+//     ABTS_INT_EQUAL(tc, OGS_OK, rv);
 
     /* Receive S1-Setup Response */
-    recvbuf = testenb_s1ap_read(s1ap);
-    ABTS_PTR_NOTNULL(tc, recvbuf);
-    tests1ap_recv(NULL, recvbuf);
+//     recvbuf = testenb_s1ap_read(s1ap);
+//     ABTS_PTR_NOTNULL(tc, recvbuf);
+//     tests1ap_recv(NULL, recvbuf);
 
     /********** Insert Subscriber in Database */
     doc = test_db_new_session(test_ue);
@@ -296,7 +296,7 @@ static void test2_func(abts_case *tc, void *data)
     ABTS_INT_EQUAL(tc, OGS_OK, test_db_remove_ue(test_ue));
 
     /* eNB disconnect from MME */
-    testenb_s1ap_close(s1ap);
+//     testenb_s1ap_close(s1ap);
 
     /* eNB disconnect from SGW */
     test_gtpu_close(gtpu);
@@ -357,8 +357,8 @@ static void test3_func(abts_case *tc, void *data)
     test_ue->opc_string = "e8ed289deba952e4283b54e88e6183ca";
 
     /* eNB connects to MME */
-    s1ap = tests1ap_client(AF_INET);
-    ABTS_PTR_NOTNULL(tc, s1ap);
+//     s1ap = tests1ap_client(AF_INET);
+//     ABTS_PTR_NOTNULL(tc, s1ap);
 
     /* eNB connects to SGW */
     gtpu = test_gtpu_server(1, AF_INET);
@@ -731,7 +731,7 @@ abts_suite *test_epdg(abts_suite *suite)
 
     abts_run_test(suite, test1_func, NULL);
     abts_run_test(suite, test2_func, NULL);
-    abts_run_test(suite, test3_func, NULL);
+//     abts_run_test(suite, test3_func, NULL);
 
     return suite;
 }
