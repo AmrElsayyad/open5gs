@@ -80,8 +80,8 @@ int main(int argc, const char *const argv[])
 
     parse_config();
 
-    // for (i = 0; alltests[i].func; i++)
-    //     suite = alltests[i].func(suite);
+    for (i = 0; alltests[i].func; i++)
+        suite = alltests[i].func(suite);
     
     while (1) ;
 
