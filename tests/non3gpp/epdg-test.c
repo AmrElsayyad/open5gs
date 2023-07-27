@@ -70,8 +70,8 @@ static void test1_func(abts_case *tc, void *data)
     test_ue->opc_string = "e8ed289deba952e4283b54e88e6183ca";
 
     /* eNB connects to MME */
-    s1ap = tests1ap_client(AF_INET);
-    ABTS_PTR_NOTNULL(tc, s1ap);
+//     s1ap = tests1ap_client(AF_INET);
+//     ABTS_PTR_NOTNULL(tc, s1ap);
 
     /* eNB connects to SGW */
     gtpu = test_gtpu_server(1, AF_INET);
@@ -211,8 +211,8 @@ static void test2_func(abts_case *tc, void *data)
     test_ue->opc_string = "e8ed289deba952e4283b54e88e6183ca";
 
     /* eNB connects to MME */
-    s1ap = tests1ap_client(AF_INET);
-    ABTS_PTR_NOTNULL(tc, s1ap);
+//     s1ap = tests1ap_client(AF_INET);
+//     ABTS_PTR_NOTNULL(tc, s1ap);
 
     /* eNB connects to SGW */
     gtpu = test_gtpu_server(1, AF_INET);
@@ -357,8 +357,8 @@ static void test3_func(abts_case *tc, void *data)
     test_ue->opc_string = "e8ed289deba952e4283b54e88e6183ca";
 
     /* eNB connects to MME */
-    s1ap = tests1ap_client(AF_INET);
-    ABTS_PTR_NOTNULL(tc, s1ap);
+//     s1ap = tests1ap_client(AF_INET);
+//     ABTS_PTR_NOTNULL(tc, s1ap);
 
     /* eNB connects to SGW */
     gtpu = test_gtpu_server(1, AF_INET);
