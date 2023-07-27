@@ -145,6 +145,7 @@ void mme_context_final(void)
     mme_pgw_remove_all();
     mme_csmap_remove_all();
     mme_vlr_remove_all();
+    mme_sgsn_remove_all();
 
     ogs_assert(self.enb_addr_hash);
     ogs_hash_destroy(self.enb_addr_hash);
@@ -1651,7 +1652,6 @@ int mme_context_parse_config(void)
                             ogs_nas_rai_t rai;
                             uint16_t cell_id = 0;
                             bool rai_parsed = false, cell_id_parsed = false;
-                            bool default_route = false;
                             mme_sgsn_route_t *sgsn_rt = NULL;
 
                             if (ogs_yaml_iter_type(&routes_array) == YAML_MAPPING_NODE) {
@@ -1697,8 +1697,6 @@ int mme_context_parse_config(void)
                                     } while (
                                         ogs_yaml_iter_type(&cell_id_iter) ==
                                             YAML_SEQUENCE_NODE);
-                                } else if (!strcmp(routes_key, "default")) {
-                                    default_route = true;
                                 } else
                                     ogs_warn("unknown key `%s`", routes_key);
                             }
@@ -1709,10 +1707,10 @@ int mme_context_parse_config(void)
                             memcpy(&sgsn_rt->rai, &rai, sizeof(rai));
                             sgsn_rt->cell_id = cell_id;
                             ogs_list_add(&sgsn->route_list, sgsn_rt);
-                            if (default_route)
-                                sgsn->default_route = true;
 
                         } while (ogs_yaml_iter_type(&routes_array) == YAML_SEQUENCE_NODE);
+                    } else if (!strcmp(sgsn_key, "default_route")) {
+                        sgsn->default_route = true;
                     }
                 }
             } while (ogs_yaml_iter_type(&sgsn_array) == YAML_SEQUENCE_NODE);
