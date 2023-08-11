@@ -34,6 +34,33 @@
 #include "mme-path.h"
 #include "mme-sm.h"
 
+static bool maximum_number_of_enbs_is_reached(void)
+{
+    mme_enb_t *enb = NULL, *next_enb = NULL;
+    int number_of_enbs_online = 0;
+
+    ogs_list_for_each_safe(&mme_self()->enb_list, next_enb, enb) {
+        if (enb->state.s1_setup_success) {
+            number_of_enbs_online++;
+        }
+    }
+
+    return number_of_enbs_online >= ogs_app()->max.peer;
+}
+
+static bool enb_plmn_id_is_foreign(mme_enb_t *enb)
+{
+    int i;
+
+    for (i = 0; i < enb->num_of_supported_ta_list; i++) {
+        if (memcmp(&enb->plmn_id, &enb->supported_ta_list[i].plmn_id,
+                    OGS_PLMN_ID_LEN) == 0)
+            return false;
+    }
+
+    return true;
+}
+
 static bool served_tai_is_found(mme_enb_t *enb)
 {
     int i;
@@ -49,20 +76,6 @@ static bool served_tai_is_found(mme_enb_t *enb)
     }
 
     return false;
-}
-
-static bool maximum_number_of_enbs_is_reached(void)
-{
-    mme_enb_t *enb = NULL, *next_enb = NULL;
-    int number_of_enbs_online = 0;
-
-    ogs_list_for_each_safe(&mme_self()->enb_list, next_enb, enb) {
-        if (enb->state.s1_setup_success) {
-            number_of_enbs_online++;
-        }
-    }
-
-    return number_of_enbs_online >= ogs_app()->max.peer;
 }
 
 void s1ap_handle_s1_setup_request(mme_enb_t *enb, ogs_s1ap_message_t *message)
@@ -110,17 +123,41 @@ void s1ap_handle_s1_setup_request(mme_enb_t *enb, ogs_s1ap_message_t *message)
         }
     }
 
-    ogs_assert(Global_ENB_ID);
+    if (!Global_ENB_ID) {
+        ogs_error("No Global_ENB_ID");
+        group = S1AP_Cause_PR_misc;
+        cause = S1AP_CauseProtocol_semantic_error;
+
+        r = s1ap_send_s1_setup_failure(enb, group, cause);
+        ogs_expect(r == OGS_OK);
+        ogs_assert(r != OGS_ERROR);
+        return;
+    }
+
+    if (!SupportedTAs) {
+        ogs_error("No SupportedTAs");
+        group = S1AP_Cause_PR_misc;
+        cause = S1AP_CauseProtocol_semantic_error;
+
+        r = s1ap_send_s1_setup_failure(enb, group, cause);
+        ogs_expect(r == OGS_OK);
+        ogs_assert(r != OGS_ERROR);
+        return;
+    }
 
     ogs_s1ap_ENB_ID_to_uint32(&Global_ENB_ID->eNB_ID, &enb_id);
     ogs_debug("    IP[%s] ENB_ID[%d]", OGS_ADDR(enb->sctp.addr, buf), enb_id);
 
+    mme_enb_set_enb_id(enb, enb_id);
+
+    memcpy(&enb->plmn_id,
+            Global_ENB_ID->pLMNidentity.buf, sizeof(enb->plmn_id));
+    ogs_debug("    PLMN_ID[MCC:%d MNC:%d]",
+            ogs_plmn_id_mcc(&enb->plmn_id), ogs_plmn_id_mnc(&enb->plmn_id));
+
     if (PagingDRX)
         ogs_debug("    PagingDRX[%ld]", *PagingDRX);
 
-    mme_enb_set_enb_id(enb, enb_id);
-
-    ogs_assert(SupportedTAs);
     /* Parse Supported TA */
     enb->num_of_supported_ta_list = 0;
     for (i = 0; i < SupportedTAs->list.count; i++) {
@@ -169,11 +206,21 @@ void s1ap_handle_s1_setup_request(mme_enb_t *enb, ogs_s1ap_message_t *message)
         return;
     }
 
-    if (enb->num_of_supported_ta_list == 0) {
+    /*
+     * TS36.413
+     * Section 8.7.3.4 Abnormal Conditions
+     *
+     * If the eNB initiates the procedure by sending a S1 SETUP REQUEST
+     * message including the PLMN Identity IEs and none of the PLMNs
+     * provided by the eNB is identified by the MME, then the MME shall
+     * reject the eNB S1 Setup Request procedure with the appropriate cause
+     * value, e.g., “Unknown PLMN”.
+     */
+    if (enb_plmn_id_is_foreign(enb)) {
         ogs_warn("S1-Setup failure:");
-        ogs_warn("    No supported TA exist in S1-Setup request");
+        ogs_warn("    Global-ENB-ID PLMN-ID is foreign");
         group = S1AP_Cause_PR_misc;
-        cause = S1AP_CauseMisc_unspecified;
+        cause = S1AP_CauseMisc_unknown_PLMN;
 
         r = s1ap_send_s1_setup_failure(enb, group, cause);
         ogs_expect(r == OGS_OK);
@@ -230,6 +277,7 @@ void s1ap_handle_initial_ue_message(mme_enb_t *enb, ogs_s1ap_message_t *message)
     ogs_assert(InitialUEMessage);
 
     ogs_info("InitialUEMessage");
+    MME_UE_LIST_CHECK;
 
     for (i = 0; i < InitialUEMessage->protocolIEs.list.count; i++) {
         ie = InitialUEMessage->protocolIEs.list.array[i];
@@ -345,6 +393,16 @@ void s1ap_handle_initial_ue_message(mme_enb_t *enb, ogs_s1ap_message_t *message)
                 CLEAR_MME_UE_TIMER(mme_ue->t_mobile_reachable);
             }
         }
+    } else {
+        ogs_error("Known UE ENB_UE_S1AP_ID[%d] [%p:%p]",
+                (int)*ENB_UE_S1AP_ID, enb_ue, enb_ue->mme_ue);
+        if (enb_ue->mme_ue)
+            ogs_error("    S_TMSI[G:%d,C:%d,M_TMSI:0x%x] IMSI:[%s]",
+                enb_ue->mme_ue->current.guti.mme_gid,
+                enb_ue->mme_ue->current.guti.mme_code,
+                enb_ue->mme_ue->current.guti.m_tmsi,
+                MME_UE_HAVE_IMSI(enb_ue->mme_ue)
+                ? enb_ue->mme_ue->imsi_bcd : "Unknown");
     }
 
     if (!NAS_PDU) {
@@ -436,6 +494,7 @@ void s1ap_handle_uplink_nas_transport(
     ogs_assert(UplinkNASTransport);
 
     ogs_debug("UplinkNASTransport");
+    MME_UE_LIST_CHECK;
 
     for (i = 0; i < UplinkNASTransport->protocolIEs.list.count; i++) {
         ie = UplinkNASTransport->protocolIEs.list.array[i];
@@ -600,6 +659,7 @@ void s1ap_handle_ue_capability_info_indication(
     ogs_assert(UECapabilityInfoIndication);
 
     ogs_debug("UECapabilityInfoIndication");
+    MME_UE_LIST_CHECK;
 
     for (i = 0; i < UECapabilityInfoIndication->protocolIEs.list.count; i++) {
         ie = UECapabilityInfoIndication->protocolIEs.list.array[i];
@@ -698,6 +758,7 @@ void s1ap_handle_initial_context_setup_response(
     ogs_assert(InitialContextSetupResponse);
 
     ogs_debug("InitialContextSetupResponse");
+    MME_UE_LIST_CHECK;
 
     for (i = 0; i < InitialContextSetupResponse->protocolIEs.list.count; i++) {
         ie = InitialContextSetupResponse->protocolIEs.list.array[i];
@@ -1797,6 +1858,7 @@ void s1ap_handle_e_rab_modification_indication(
     ogs_assert(E_RABModificationIndication);
 
     ogs_info("E_RABModificationIndication");
+    MME_UE_LIST_CHECK;
 
     for (i = 0; i < E_RABModificationIndication->protocolIEs.list.count; i++) {
         ie = E_RABModificationIndication->protocolIEs.list.array[i];
