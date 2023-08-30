@@ -20,6 +20,7 @@ meson.add_install_script(python3_exe, '-c',
         mkdir_p.format(freediameter_sysconfdir))
 
 freediameter_conf = '''
+    aaa.conf
     mme.conf
     hss.conf
     smf.conf

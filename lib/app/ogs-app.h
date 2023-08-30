@@ -97,6 +97,9 @@ void amf_terminate(void);
 int scp_initialize(void);
 void scp_terminate(void);
 
+int aaa_initialize(void);
+void aaa_terminate(void);
+
 #ifdef __cplusplus
 }
 #endif

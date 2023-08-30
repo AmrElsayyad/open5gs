@@ -21,6 +21,7 @@ meson.add_install_script(python3_exe, '-c',
 
 tls_security = '''
     ca.crt
+    aaa.key
     amf.key
     ausf.key
     bsf.key
@@ -34,6 +35,7 @@ tls_security = '''
     smf.key
     udm.key
     udr.key
+    aaa.crt
     amf.crt
     ausf.crt
     bsf.crt
