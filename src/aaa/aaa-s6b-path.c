@@ -22,12 +22,14 @@
 #include "aaa-context.h"
 #include "aaa-fd-path.h"
 
+#include "aaa-s6b-path.h"
 #include "aaa-swx-path.h"
 
 struct sess_state {
     os0_t       sid;                /* S6B Session-Id */
     
-    os0_t       peer_host;          /* Peer Host */
+    os0_t       hss_host;          /* HSS Host */
+    os0_t       smf_host;          /* SMF Host */
 
     aaa_sess_t *sess;
     bool handover_ind;
@@ -121,10 +123,8 @@ static int aaa_s6b_aar_cb( struct msg **msg, struct avp *avp,
     char imsi_bcd[OGS_MAX_IMSI_BCD_LEN+1];
     uint8_t imsi[OGS_MAX_IMSI_LEN];
     int imsi_len = 0;
-
-    uint32_t result_code = 0;
     
-    ogs_info("AAR callback");
+    ogs_info("Incoming Authentication-Authorization-Request");
 
     /*************** Send Server-Assignment-Request ***************/
 
@@ -153,14 +153,13 @@ static int aaa_s6b_aar_cb( struct msg **msg, struct avp *avp,
 
     ogs_extract_digit_from_string(imsi_bcd, sar_sess_data->user_name);
 
-    ogs_info("IMSI: %s", imsi_bcd);
     ogs_bcd_to_buffer(imsi_bcd, imsi, &imsi_len);
     ogs_assert(imsi_len);
 
     aaa_ue->imsi_len = imsi_len;
     memcpy(aaa_ue->imsi, imsi, aaa_ue->imsi_len);
     ogs_buffer_to_bcd(aaa_ue->imsi, aaa_ue->imsi_len, aaa_ue->imsi_bcd);
-    ogs_info("UE IMSI: %s", aaa_ue->imsi_bcd);
+    ogs_info("IMSI: %s", aaa_ue->imsi_bcd);
 
     /* Get Origin-Host */
     ret = fd_msg_search_avp(sar_qry, ogs_diam_origin_host, &avp);
@@ -169,30 +168,34 @@ static int aaa_s6b_aar_cb( struct msg **msg, struct avp *avp,
         ret = fd_msg_avp_hdr(avp, &sar_hdr);
         ogs_assert(ret == 0);
     } else {
-        ogs_error("no_CC-Request-Type ");
-        result_code = OGS_DIAM_MISSING_AVP;
+        ogs_error("Missing Origin Host AVP in message header");
         goto out;
     }
-    sar_sess_data->peer_host = (os0_t)ogs_strdup((char *)sar_hdr->avp_value->os.data);
-    ogs_info("Peer Host: %s", sar_sess_data->peer_host);
+    sar_sess_data->smf_host = (os0_t)ogs_strdup((char *)sar_hdr->avp_value->os.data);
+    ogs_info("SMF Host: %s", sar_sess_data->smf_host);
+
+    /* Set the Destination-Host */
+    sar_sess_data->hss_host = (os0_t)ogs_strdup((char *)sar_sess_data->smf_host);
+    strncpy((char *)sar_sess_data->hss_host, "hss", 3);
+    ogs_info("HSS Host: %s", sar_sess_data->hss_host);
 
     ogs_info("Sending Server-Assignment-Request");
     sar_sess_data->server_assignment_type = OGS_DIAM_CX_SERVER_ASSIGNMENT_REGISTRATION;
     aaa_swx_send_sar(sar_sess_data);
 
 
-    /********** Create Authentication-Authorization-Answer **********/
+    /* Creating Authentication-Authorization-Answer */
+
+    ogs_info("Creating Authentication-Authorization-Answer");
 
     struct msg *ans, *qry;
     struct avp_hdr *hdr;
     union avp_value val;
     struct sess_state *sess_data = NULL;
 
-    result_code = OGS_DIAM_MISSING_AVP;
+    uint32_t result_code = OGS_DIAM_MISSING_AVP;
 
     ogs_assert(msg);
-
-    ogs_debug("Authentication-Authorization-Request");
 
     /* Create answer header */
     qry = *msg;
@@ -254,20 +257,40 @@ static int aaa_s6b_aar_cb( struct msg **msg, struct avp *avp,
     ret = fd_msg_avp_add(ans, MSG_BRW_LAST_CHILD, avp);
     ogs_assert(ret == 0);
 
-    /* Set the Origin-Host, Origin-Realm, andResult-Code AVPs */
-    ret = fd_msg_rescode_set(ans, (char *)"DIAMETER_SUCCESS", NULL, NULL, 1);
-    ogs_assert(ret == 0);
+    /* Wait for Server-Assignment-Answer */
+    while (!saa_received) ;
+    
+    /* Set the Result-Code */
+    if (saa_result_code == ER_DIAMETER_SUCCESS) {
+        ret = fd_msg_rescode_set(ans, 
+                    (char *)"DIAMETER_SUCCESS", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else if (saa_result_code == OGS_DIAM_AVP_UNSUPPORTED) {
+        ret = fd_msg_rescode_set(ans,
+                    (char *)"DIAMETER_AVP_UNSUPPORTED", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else if (saa_result_code == OGS_DIAM_UNKNOWN_SESSION_ID) {
+        ret = fd_msg_rescode_set(ans,
+                    (char *)"DIAMETER_UNKNOWN_SESSION_ID", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else if (saa_result_code == OGS_DIAM_MISSING_AVP) {
+        ret = fd_msg_rescode_set(ans,
+                    (char *)"DIAMETER_MISSING_AVP", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else {
+        ret = ogs_diam_message_experimental_rescode_set(ans, saa_result_code);
+        ogs_assert(ret == 0);
+    }
 
     /* Store this value in the session */
     ret = fd_sess_state_store(aaa_s6b_reg, sess, &sess_data);
     ogs_assert(ret == 0);
     ogs_assert(sess_data == NULL);
 
+    ogs_info("Sending Authentication-Authorization-Answer");
     /* Send the answer */
     ret = fd_msg_send(msg, NULL, NULL);
     ogs_assert(ret == 0);
-
-    ogs_debug("Authentication-Authorization-Answer");
 
     /* Add this value to the stats */
     ogs_assert(pthread_mutex_lock(&ogs_diam_logger_self()->stats_lock) == 0);
@@ -301,6 +324,7 @@ out:
         ogs_assert(sess_data == NULL);
     }
 
+    ogs_info("Sending Authentication-Authorization-Answer");
     ret = fd_msg_send(msg, NULL, NULL);
     ogs_assert(ret == 0);
 
@@ -375,7 +399,7 @@ static int aaa_s6b_str_cb( struct msg **msg, struct avp *avp,
     ogs_diam_logger_self()->stats.nb_echoed++;
     ogs_assert(pthread_mutex_unlock(&ogs_diam_logger_self()->stats_lock) ==0);
 
-    return 0;
+    return OGS_OK;
 
 out:
     /* Set the Result-Code */
@@ -405,7 +429,7 @@ out:
     ret = fd_msg_send(msg, NULL, NULL);
     ogs_assert(ret == 0);
 
-    return 0;
+    return OGS_OK;
 }
 
 int aaa_s6b_init(void)
@@ -446,7 +470,7 @@ int aaa_s6b_init(void)
     ret = fd_disp_app_support(ogs_diam_s6b_application, ogs_diam_vendor, 1, 0);
     ogs_assert(ret == 0);
 
-    return 0;
+    return OGS_OK;
 }
 
 void aaa_s6b_final(void)

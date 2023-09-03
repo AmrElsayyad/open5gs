@@ -22,13 +22,18 @@
 #include "aaa-context.h"
 #include "aaa-fd-path.h"
 #include "aaa-swx-path.h"
+#include "aaa-s6b-path.h"
 
 static struct session_handler *aaa_swx_reg = NULL;
 
+bool saa_received;
+uint32_t saa_result_code;
+
 struct sess_state {
-    os0_t       sid;                /* S6B Session-Id */
+    os0_t       sid;               /* S6B Session-Id */
     
-    os0_t       peer_host;          /* Peer Host */
+    os0_t       hss_host;          /* HSS Host */
+    os0_t       smf_host;          /* SMF Host */
 
     aaa_sess_t *sess;
     bool handover_ind;
@@ -55,8 +60,11 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg);
 
 static void state_cleanup(struct sess_state *sess_data, os0_t sid, void *opaque)
 {
-    if (sess_data->peer_host)
-        ogs_free(sess_data->peer_host);
+    if (sess_data->hss_host)
+        ogs_free(sess_data->hss_host);
+
+    if (sess_data->smf_host)
+        ogs_free(sess_data->smf_host);
 
     if (sess_data->user_name)
         ogs_free(sess_data->user_name);
@@ -157,8 +165,8 @@ static void aaa_swx_send_mar(struct sess_state *sess_data)
     /* Set the Destination-Host AVP */
     ret = fd_msg_avp_new(ogs_diam_destination_host, 0, &avp);
     ogs_assert(ret == 0);
-    val.os.data = sess_data->peer_host;
-    val.os.len  = strlen((char *)sess_data->peer_host);
+    val.os.data = sess_data->hss_host;
+    val.os.len  = strlen((char *)sess_data->hss_host);
     ret = fd_msg_avp_setvalue(avp, &val);
     ogs_assert(ret == 0);
     ret = fd_msg_avp_add(req, MSG_BRW_LAST_CHILD, avp);
@@ -431,9 +439,11 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
     aaa_ue_t *aaa_ue = NULL;
     aaa_sess_t *sess = NULL;
 
+    saa_received = false;
+
     ogs_assert(sess_data);
-    ogs_assert(sess_data->peer_host);
-    ogs_info("Peer Host: %s", sess_data->peer_host);
+    ogs_assert(sess_data->hss_host);
+    ogs_info("HSS Host: %s", sess_data->hss_host);
     sess = sess_data->sess;
     ogs_assert(sess);
     aaa_ue = sess->aaa_ue;
@@ -445,27 +455,22 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
     ret = fd_msg_new(ogs_diam_cx_cmd_sar, MSGFL_ALLOC_ETEID, &req);
     ogs_assert(ret == 0);
 
-    ogs_info("Create message header");
     ret = fd_msg_hdr(req, &msg_header);
     ogs_assert(ret == 0);
     msg_header->msg_appl = OGS_DIAM_SWX_APPLICATION_ID;
 
-    ogs_info("Create new session");
     #define OGS_DIAM_SWX_APP_SID_OPT  "app_swx"
     ret = fd_msg_new_session(req, (os0_t)OGS_DIAM_SWX_APP_SID_OPT,
             CONSTSTRLEN(OGS_DIAM_SWX_APP_SID_OPT));
     ogs_assert(ret == 0);
-    ogs_info("Retrieve the session of the message");
     ret = fd_msg_sess_get(fd_g_config->cnf_dict, req, &session, NULL);
     ogs_assert(ret == 0);
 
-    ogs_info("Set Vendor-Specific-Application-Id AVP");
     /* Set Vendor-Specific-Application-Id AVP */
     ret = ogs_diam_message_vendor_specific_appid_set(
             req, OGS_DIAM_SWX_APPLICATION_ID);
     ogs_assert(ret == 0);
 
-    ogs_info("Set the Auth-Session-State AVP");
     /* Set the Auth-Session-State AVP */
     ret = fd_msg_avp_new(ogs_diam_auth_session_state, 0, &avp);
     ogs_assert(ret == 0);
@@ -475,36 +480,19 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
     ret = fd_msg_avp_add(req, MSG_BRW_LAST_CHILD, avp);
     ogs_assert(ret == 0);
 
-    ogs_info("Set Origin-Host & Origin-Realm");
-    /* Set Origin-Host & Origin-Realm */
-    ret = fd_msg_add_origin(req, 0);
-    ogs_assert(ret == 0);
-
-    ogs_info("Set the Destination-Host AVP");
     /* Set the Destination-Host AVP */
     ret = fd_msg_avp_new(ogs_diam_destination_host, 0, &avp);
     ogs_assert(ret == 0);
-    val.os.data = sess_data->peer_host;
-    val.os.len  = strlen((char *)sess_data->peer_host);
+    val.os.data = sess_data->hss_host;
+    val.os.len  = strlen((char *)sess_data->hss_host);
     ret = fd_msg_avp_setvalue(avp, &val);
     ogs_assert(ret == 0);
     ret = fd_msg_avp_add(req, MSG_BRW_LAST_CHILD, avp);
     ogs_assert(ret == 0);
-
-    ogs_info("Set the Destination-Realm AVP");
-    /* Set the Destination-Realm AVP */
-    ret = fd_msg_avp_new(ogs_diam_destination_realm, 0, &avp);
-    ogs_assert(ret == 0);
-    val.os.data = (unsigned char *)(fd_g_config->cnf_diamrlm);
-    val.os.len  = strlen(fd_g_config->cnf_diamrlm);
-    ret = fd_msg_avp_setvalue(avp, &val);
-    ogs_assert(ret == 0);
-    ret = fd_msg_avp_add(req, MSG_BRW_LAST_CHILD, avp);
-    ogs_assert(ret == 0);
+    ogs_info("Destination-Host: %s", val.os.data);
 
     if (sess_data->server_assignment_type ==
             OGS_DIAM_CX_SERVER_ASSIGNMENT_REGISTRATION) {
-        ogs_info("Set the User-Name AVP");
         /* Set the User-Name AVP */
         ret = fd_msg_avp_new(ogs_diam_user_name, 0, &avp);
         ogs_assert(ret == 0);
@@ -514,9 +502,9 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
         ogs_assert(ret == 0);
         ret = fd_msg_avp_add(req, MSG_BRW_LAST_CHILD, avp);
         ogs_assert(ret == 0);
+        ogs_info("User-Name: %s", val.os.data);
     }
 
-    ogs_info("Set the Server-Assignment-Type AVP");
     /* Set the Server-Assignment-Type AVP */
     ret = fd_msg_avp_new(ogs_diam_cx_server_assignment_type, 0, &avp);
     ogs_assert(ret == 0);
@@ -533,18 +521,16 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
      * in real life we would not need it */
     svg = sess_data;
 
-    ogs_info("Store this value in the session");
     /* Store this value in the session */
     ret = fd_sess_state_store(aaa_swx_reg, session, &sess_data);
     ogs_assert(ret == 0);
     ogs_assert(sess_data == 0);
 
-    ogs_info("Send the request");
+    ogs_info("Sending Server-Assignment-Request");
     /* Send the request */
     ret = fd_msg_send(&req, aaa_swx_saa_cb, svg);
     ogs_assert(ret == 0);
 
-    ogs_info("Increment the counter");
     /* Increment the counter */
     ogs_assert(pthread_mutex_lock(&ogs_diam_logger_self()->stats_lock) == 0);
     ogs_diam_logger_self()->stats.nb_sent++;
@@ -569,10 +555,9 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
     aaa_ue_t *aaa_ue = NULL;
     aaa_sess_t *sess = NULL;
 
-    uint32_t result_code;
-    uint32_t *err = NULL, *exp_err = NULL;
+    uint32_t result_code = OGS_DIAM_MISSING_AVP;
 
-    ogs_info("Server-Assignment-Answer");
+    ogs_info("Incoming Server-Assignment-Answer");
 
     ret = clock_gettime(CLOCK_REALTIME, &ts);
     ogs_assert(ret == 0);
@@ -597,10 +582,6 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
         ogs_error("fd_sess_state_retrieve() failed");
         return;
     }
-    if ((void *)sess_data != data) {
-        ogs_error("fd_sess_state_retrieve() failed");
-        return;
-    }
 
     sess = sess_data->sess;
     ogs_assert(sess);
@@ -614,7 +595,6 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
         ret = fd_msg_avp_hdr(avp, &hdr);
         ogs_assert(ret == 0);
         result_code = hdr->avp_value->i32;
-        err = &result_code;
         ogs_info("    Result Code: %d", hdr->avp_value->i32);
     } else {
         ret = fd_msg_search_avp(*msg, ogs_diam_experimental_result, &avp);
@@ -627,7 +607,6 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
                 ret = fd_msg_avp_hdr(avpch, &hdr);
                 ogs_assert(ret == 0);
                 result_code = hdr->avp_value->i32;
-                exp_err = &result_code;
                 ogs_info("    Experimental Result Code: %d", result_code);
             }
         } else {
@@ -635,8 +614,10 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
             error++;
         }
     }
-
-    ogs_assert(err && !exp_err);
+    
+    /* Set result code for AA-Answer */
+    saa_result_code = result_code;
+    saa_received = true;
 
     /* Free the message */
     ogs_assert(pthread_mutex_lock(&ogs_diam_logger_self()->stats_lock) == 0);
