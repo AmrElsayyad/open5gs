@@ -491,6 +491,16 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
     ogs_assert(ret == 0);
     ogs_info("Destination-Host: %s", val.os.data);
 
+    /* Set the Destination-Realm AVP */
+    ret = fd_msg_avp_new(ogs_diam_destination_realm, 0, &avp);
+    ogs_assert(ret == 0);
+    val.os.data = (unsigned char *)(fd_g_config->cnf_diamrlm);
+    val.os.len  = strlen(fd_g_config->cnf_diamrlm);
+    ret = fd_msg_avp_setvalue(avp, &val);
+    ogs_assert(ret == 0);
+    ret = fd_msg_avp_add(req, MSG_BRW_LAST_CHILD, avp);
+    ogs_assert(ret == 0);
+
     if (sess_data->server_assignment_type ==
             OGS_DIAM_CX_SERVER_ASSIGNMENT_REGISTRATION) {
         /* Set the User-Name AVP */
