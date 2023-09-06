@@ -480,6 +480,10 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
     ret = fd_msg_avp_add(req, MSG_BRW_LAST_CHILD, avp);
     ogs_assert(ret == 0);
 
+    /* Set Origin-Host & Origin-Realm */
+    ret = fd_msg_add_origin(req, 0);
+    ogs_assert(ret == 0);
+
     /* Set the Destination-Host AVP */
     ret = fd_msg_avp_new(ogs_diam_destination_host, 0, &avp);
     ogs_assert(ret == 0);
