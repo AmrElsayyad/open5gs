@@ -72,6 +72,27 @@ typedef struct aaa_sess_s {
     aaa_ue_t *aaa_ue;
 } aaa_sess_t;
 
+struct sess_state {
+    os0_t       sid;                /* S6B Session-Id */
+    
+    os0_t       hss_host;          /* HSS Host */
+    os0_t       smf_host;          /* SMF Host */
+
+    aaa_sess_t *sess;
+    bool handover_ind;
+    int (*gtp_send)(aaa_sess_t *sess, bool handover_ind);
+
+    struct session *aar_sess;
+
+    char *user_name;
+
+    bool resync;
+
+    int server_assignment_type;
+
+    struct timespec ts;             /* Time of sending the message */
+};
+
 void aaa_context_init(void);
 void aaa_context_final(void);
 aaa_context_t *aaa_self(void);

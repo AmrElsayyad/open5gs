@@ -21,32 +21,10 @@
 
 #include "aaa-context.h"
 #include "aaa-fd-path.h"
-#include "aaa-swx-path.h"
 #include "aaa-s6b-path.h"
+#include "aaa-swx-path.h"
 
 static struct session_handler *aaa_swx_reg = NULL;
-
-bool saa_received;
-uint32_t saa_result_code;
-
-struct sess_state {
-    os0_t       sid;               /* S6B Session-Id */
-    
-    os0_t       hss_host;          /* HSS Host */
-    os0_t       smf_host;          /* SMF Host */
-
-    aaa_sess_t *sess;
-    bool handover_ind;
-    int (*gtp_send)(aaa_sess_t *sess, bool handover_ind);
-
-    char *user_name;
-
-    bool resync;
-
-    int server_assignment_type;
-
-    struct timespec ts;             /* Time of sending the message */
-};
 
 static OGS_POOL(sess_state_pool, struct sess_state);
 static ogs_thread_mutex_t sess_state_mutex;
@@ -439,8 +417,6 @@ void aaa_swx_send_sar(struct sess_state *sess_data)
     aaa_ue_t *aaa_ue = NULL;
     aaa_sess_t *sess = NULL;
 
-    saa_received = false;
-
     ogs_assert(sess_data);
     ogs_assert(sess_data->hss_host);
     ogs_info("HSS Host: %s", sess_data->hss_host);
@@ -556,6 +532,10 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
 {
     int rv, ret, new;
 
+    struct msg *ans = NULL;
+
+    struct msg_hdr *msg_header = NULL;
+
     struct avp *avp, *avpch;
     struct avp_hdr *hdr;
 
@@ -602,6 +582,18 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
     aaa_ue = sess->aaa_ue;
     ogs_assert(aaa_ue);
 
+    ogs_info("Setting Result-Code for AA-Answer");
+    /* Create the AA-Answer */
+    ret = fd_msg_new(ogs_diam_rx_cmd_aaa, 0, &ans);
+    ogs_assert(ret == 0);
+
+    ret = fd_msg_hdr(ans, &msg_header);
+    ogs_assert(ret == 0);
+
+    /* Set the AAR session */
+    ret = fd_msg_sess_set(ans, sess_data->aar_sess);
+    ogs_assert(ret == 0);
+
     /* Value of Result Code */
     ret = fd_msg_search_avp(*msg, ogs_diam_result_code, &avp);
     ogs_assert(ret == 0);
@@ -629,9 +621,38 @@ static void aaa_swx_saa_cb(void *data, struct msg **msg)
         }
     }
     
-    /* Set result code for AA-Answer */
-    saa_result_code = result_code;
-    saa_received = true;
+    /* Set the Result-Code */
+    if (result_code == ER_DIAMETER_SUCCESS) {
+        ret = fd_msg_rescode_set(ans, 
+                    (char *)"DIAMETER_SUCCESS", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else if (result_code == OGS_DIAM_AVP_UNSUPPORTED) {
+        ret = fd_msg_rescode_set(ans,
+                    (char *)"DIAMETER_AVP_UNSUPPORTED", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else if (result_code == OGS_DIAM_UNKNOWN_SESSION_ID) {
+        ret = fd_msg_rescode_set(ans,
+                    (char *)"DIAMETER_UNKNOWN_SESSION_ID", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else if (result_code == OGS_DIAM_MISSING_AVP) {
+        ret = fd_msg_rescode_set(ans,
+                    (char *)"DIAMETER_MISSING_AVP", NULL, NULL, 1);
+        ogs_assert(ret == 0);
+    } else {
+        ret = ogs_diam_message_experimental_rescode_set(ans, result_code);
+        ogs_assert(ret == 0);
+    }
+
+    ogs_info("Sending Authentication-Authorization-Answer");
+    /* Send the answer */
+    ret = fd_msg_send(&ans, NULL, NULL);
+    ogs_assert(ret == 0);
+
+    /* Add this value to the stats */
+    ogs_assert(pthread_mutex_lock(&ogs_diam_logger_self()->stats_lock) == 0);
+    ogs_diam_logger_self()->stats.nb_echoed++;
+    ogs_assert(pthread_mutex_unlock(&ogs_diam_logger_self()->stats_lock) ==0);
+    
 
     /* Free the message */
     ogs_assert(pthread_mutex_lock(&ogs_diam_logger_self()->stats_lock) == 0);

@@ -26,8 +26,7 @@ extern "C" {
 
 #include "aaa-context.h"
 
-extern bool saa_received;
-extern uint32_t saa_result_code;
+extern struct session_handler *aaa_s6b_reg;
 
 #ifdef __cplusplus
 }

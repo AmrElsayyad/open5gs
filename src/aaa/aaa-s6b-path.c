@@ -25,29 +25,10 @@
 #include "aaa-s6b-path.h"
 #include "aaa-swx-path.h"
 
-struct sess_state {
-    os0_t       sid;                /* S6B Session-Id */
-    
-    os0_t       hss_host;          /* HSS Host */
-    os0_t       smf_host;          /* SMF Host */
-
-    aaa_sess_t *sess;
-    bool handover_ind;
-    int (*gtp_send)(aaa_sess_t *sess, bool handover_ind);
-
-    char *user_name;
-
-    bool resync;
-
-    int server_assignment_type;
-
-    struct timespec ts;             /* Time of sending the message */
-};
-
 static OGS_POOL(sess_state_pool, struct sess_state);
 static ogs_thread_mutex_t sess_state_mutex;
 
-static struct session_handler *aaa_s6b_reg = NULL;
+struct session_handler *aaa_s6b_reg = NULL;
 static struct disp_hdl *hdl_s6b_fb = NULL;
 static struct disp_hdl *hdl_s6b_aar = NULL;
 static struct disp_hdl *hdl_s6b_str = NULL;
@@ -110,11 +91,18 @@ static int aaa_s6b_fb_cb(struct msg **msg, struct avp *avp,
 static int aaa_s6b_aar_cb( struct msg **msg, struct avp *avp,
         struct session *sess, void *opaque, enum disp_action *act)
 {
+    ogs_assert(msg);
+ 
     int ret = 0;
 
     aaa_ue_t *aaa_ue = aaa_ue_new();
     aaa_sess_t *sar_sess = NULL;
     char apn[] = "wlan";
+
+    struct msg *ans, *qry = *msg;
+    struct avp_hdr *hdr;
+    union avp_value val;
+    struct sess_state *sess_data = NULL;
 
     struct msg *sar_qry = *msg;
     struct avp_hdr *sar_hdr;
@@ -123,82 +111,15 @@ static int aaa_s6b_aar_cb( struct msg **msg, struct avp *avp,
     char imsi_bcd[OGS_MAX_IMSI_BCD_LEN+1];
     uint8_t imsi[OGS_MAX_IMSI_LEN];
     int imsi_len = 0;
-    
-    ogs_info("Incoming Authentication-Authorization-Request");
 
-    /*************** Send Server-Assignment-Request ***************/
-
-    /* Setup Session */
-    sar_sess = aaa_sess_add_by_apn(aaa_ue, apn, OGS_GTP2_RAT_TYPE_WLAN);
-    ogs_assert(sar_sess);
-    ogs_info("Session APN: %s", sar_sess->session.name);
-
-    /* Create the random value to store with the session */
-    sar_sess_data = ogs_calloc(1, sizeof (*sar_sess_data));
-    ogs_assert(sar_sess_data);
-
-    sar_sess_data->sess = sar_sess;
-    sar_sess_data->gtp_send = aaa_s2b_send_create_session_request;
-    sar_sess_data->handover_ind = false;
-
-    /* Get User-Name AVP */
-    ret = fd_msg_search_avp(sar_qry, ogs_diam_user_name, &avp);
-    ogs_assert(ret == 0);
-    ret = fd_msg_avp_hdr(avp, &sar_hdr);
-    ogs_assert(ret == 0);
-
-    sar_sess_data->user_name = ogs_strndup(
-        (char*)sar_hdr->avp_value->os.data, sar_hdr->avp_value->os.len);
-    ogs_assert(sar_sess_data->user_name);
-
-    ogs_extract_digit_from_string(imsi_bcd, sar_sess_data->user_name);
-
-    ogs_bcd_to_buffer(imsi_bcd, imsi, &imsi_len);
-    ogs_assert(imsi_len);
-
-    aaa_ue->imsi_len = imsi_len;
-    memcpy(aaa_ue->imsi, imsi, aaa_ue->imsi_len);
-    ogs_buffer_to_bcd(aaa_ue->imsi, aaa_ue->imsi_len, aaa_ue->imsi_bcd);
-    ogs_info("IMSI: %s", aaa_ue->imsi_bcd);
-
-    /* Get Origin-Host */
-    ret = fd_msg_search_avp(sar_qry, ogs_diam_origin_host, &avp);
-    ogs_assert(ret == 0);
-    if (avp) {
-        ret = fd_msg_avp_hdr(avp, &sar_hdr);
-        ogs_assert(ret == 0);
-    } else {
-        ogs_error("Missing Origin Host AVP in message header");
-        goto out;
-    }
-    sar_sess_data->smf_host = (os0_t)ogs_strdup((char *)sar_hdr->avp_value->os.data);
-    ogs_info("SMF Host: %s", sar_sess_data->smf_host);
-
-    /* Set the Destination-Host */
-    sar_sess_data->hss_host = (os0_t)ogs_strdup((char *)sar_sess_data->smf_host);
-    strncpy((char *)sar_sess_data->hss_host, "hss", 3);
-    ogs_info("HSS Host: %s", sar_sess_data->hss_host);
-
-    ogs_info("Sending Server-Assignment-Request");
-    sar_sess_data->server_assignment_type = OGS_DIAM_CX_SERVER_ASSIGNMENT_REGISTRATION;
-    aaa_swx_send_sar(sar_sess_data);
+    uint32_t result_code = OGS_DIAM_MISSING_AVP;
 
 
     /* Creating Authentication-Authorization-Answer */
 
     ogs_info("Creating Authentication-Authorization-Answer");
 
-    struct msg *ans, *qry;
-    struct avp_hdr *hdr;
-    union avp_value val;
-    struct sess_state *sess_data = NULL;
-
-    uint32_t result_code = OGS_DIAM_MISSING_AVP;
-
-    ogs_assert(msg);
-
     /* Create answer header */
-    qry = *msg;
     ret = fd_msg_new_answer_from_req(fd_g_config->cnf_dict, msg, 0);
     ogs_assert(ret == 0);
     ans = *msg;
@@ -257,45 +178,73 @@ static int aaa_s6b_aar_cb( struct msg **msg, struct avp *avp,
     ret = fd_msg_avp_add(ans, MSG_BRW_LAST_CHILD, avp);
     ogs_assert(ret == 0);
 
-    /* Wait for Server-Assignment-Answer */
-    while (!saa_received) ;
-    
-    /* Set the Result-Code */
-    if (saa_result_code == ER_DIAMETER_SUCCESS) {
-        ret = fd_msg_rescode_set(ans, 
-                    (char *)"DIAMETER_SUCCESS", NULL, NULL, 1);
-        ogs_assert(ret == 0);
-    } else if (saa_result_code == OGS_DIAM_AVP_UNSUPPORTED) {
-        ret = fd_msg_rescode_set(ans,
-                    (char *)"DIAMETER_AVP_UNSUPPORTED", NULL, NULL, 1);
-        ogs_assert(ret == 0);
-    } else if (saa_result_code == OGS_DIAM_UNKNOWN_SESSION_ID) {
-        ret = fd_msg_rescode_set(ans,
-                    (char *)"DIAMETER_UNKNOWN_SESSION_ID", NULL, NULL, 1);
-        ogs_assert(ret == 0);
-    } else if (saa_result_code == OGS_DIAM_MISSING_AVP) {
-        ret = fd_msg_rescode_set(ans,
-                    (char *)"DIAMETER_MISSING_AVP", NULL, NULL, 1);
-        ogs_assert(ret == 0);
-    } else {
-        ret = ogs_diam_message_experimental_rescode_set(ans, saa_result_code);
-        ogs_assert(ret == 0);
-    }
-
     /* Store this value in the session */
     ret = fd_sess_state_store(aaa_s6b_reg, sess, &sess_data);
     ogs_assert(ret == 0);
     ogs_assert(sess_data == NULL);
+    
 
-    ogs_info("Sending Authentication-Authorization-Answer");
-    /* Send the answer */
-    ret = fd_msg_send(msg, NULL, NULL);
+    /*************** Send Server-Assignment-Request ***************/
+    
+    ogs_info("Creating Server-Assignment-Request");
+
+    /* Setup Session */
+    sar_sess = aaa_sess_add_by_apn(aaa_ue, apn, OGS_GTP2_RAT_TYPE_WLAN);
+    ogs_assert(sar_sess);
+    ogs_info("Session APN: %s", sar_sess->session.name);
+
+    /* Create the random value to store with the session */
+    sar_sess_data = ogs_calloc(1, sizeof (*sar_sess_data));
+    ogs_assert(sar_sess_data);
+
+    sar_sess_data->sess = sar_sess;
+    sar_sess_data->gtp_send = aaa_s2b_send_create_session_request;
+    sar_sess_data->handover_ind = false;
+
+    /* Get User-Name AVP */
+    ret = fd_msg_search_avp(sar_qry, ogs_diam_user_name, &avp);
+    ogs_assert(ret == 0);
+    ret = fd_msg_avp_hdr(avp, &sar_hdr);
     ogs_assert(ret == 0);
 
-    /* Add this value to the stats */
-    ogs_assert(pthread_mutex_lock(&ogs_diam_logger_self()->stats_lock) == 0);
-    ogs_diam_logger_self()->stats.nb_echoed++;
-    ogs_assert(pthread_mutex_unlock(&ogs_diam_logger_self()->stats_lock) ==0);
+    sar_sess_data->user_name = ogs_strndup(
+        (char*)sar_hdr->avp_value->os.data, sar_hdr->avp_value->os.len);
+    ogs_assert(sar_sess_data->user_name);
+
+    ogs_extract_digit_from_string(imsi_bcd, sar_sess_data->user_name);
+
+    ogs_bcd_to_buffer(imsi_bcd, imsi, &imsi_len);
+    ogs_assert(imsi_len);
+
+    aaa_ue->imsi_len = imsi_len;
+    memcpy(aaa_ue->imsi, imsi, aaa_ue->imsi_len);
+    ogs_buffer_to_bcd(aaa_ue->imsi, aaa_ue->imsi_len, aaa_ue->imsi_bcd);
+    ogs_info("IMSI: %s", aaa_ue->imsi_bcd);
+
+    /* Get Origin-Host */
+    ret = fd_msg_search_avp(sar_qry, ogs_diam_origin_host, &avp);
+    ogs_assert(ret == 0);
+    if (avp) {
+        ret = fd_msg_avp_hdr(avp, &sar_hdr);
+        ogs_assert(ret == 0);
+    } else {
+        ogs_error("Missing Origin Host AVP in message header");
+        goto out;
+    }
+    sar_sess_data->smf_host = (os0_t)ogs_strdup((char *)sar_hdr->avp_value->os.data);
+    ogs_info("SMF Host: %s", sar_sess_data->smf_host);
+
+    /* Set the Destination-Host */
+    sar_sess_data->hss_host = (os0_t)ogs_strdup((char *)sar_sess_data->smf_host);
+    strncpy((char *)sar_sess_data->hss_host, "hss", 3);
+    ogs_info("HSS Host: %s", sar_sess_data->hss_host);
+
+    /* Set the AAR session */
+    sar_sess_data->aar_sess = sess;
+
+    ogs_info("Sending Server-Assignment-Request");
+    sar_sess_data->server_assignment_type = OGS_DIAM_CX_SERVER_ASSIGNMENT_REGISTRATION;
+    aaa_swx_send_sar(sar_sess_data);
 
     return 0;
 
